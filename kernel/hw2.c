@@ -5,11 +5,12 @@
 
 
 asmlinkage long sys_hello(void) {
- printk("Hello, World11!\n");
+ printk("Hello, World!\n");
  return 0;
 }
 
 asmlinkage long sys_set_sec(int s, int m, int c) {
+  printk("SEC_set: before change clr: %d\n",(int)current->clr);
   if (s < 0 || m < 0 || c < 0) {
     return -EINVAL;
   }
@@ -26,76 +27,122 @@ asmlinkage long sys_set_sec(int s, int m, int c) {
   if (c > 1) {
     c = 1;
   }
- char clr_val=s+2*m+4*c;
- struct task_struct *task = current; // Pointer to the current process
- task->clr = clr_val; 
- printk("SEC - Set clr for running process, s= %d, m= %d,c= %d, clr_val: %d!!\n",s,m,c,clr_val);
- return 0;
+  char clr_val=s+2*m+4*c;
+  current->clr = clr_val; 
+  return 0;
 }
 
 asmlinkage long sys_get_sec(char clr) {
-  struct task_struct *task = current; // Pointer to the current process
-  printk("SEC - Running process CLR is %c ?\n",task->clr);
   switch(clr){
     case 'c':
-      return (task->clr/4)==1;
+      return (current->clr/4)==1;
     case 'm':
-      return ((task->clr%4)/2)==1;
+      return ((current->clr%4)/2)==1;
     case 's':
-      return (task->clr%2)==1;
+      return (current->clr%2)==1;
     default:
       return -EINVAL;
   } 
 }
 
 asmlinkage long sys_check_sec(pid_t pid, char clr) {
-
-  if(clr != 'm' && clr != 'c' && clr != 's'){
-    return -EINVAL;               // No such clearance
-  }
-
-  struct task_struct *task;
-  task = find_task_by_vpid(pid);  // Find the task_struct for the given pid
-  if (!task) {
-    return -ESRCH;                // No such process
-  }
-
-  if(current->clr != clr){
-    return -EPERM;                // The calling process does not have “clr” clearance. 
-
-  }
-
-  printk("SEC - Check if pid: %d have clr: %c!\n",pid,clr);
-  return task->clr == clr;
+  struct task_struct *target_task = find_task_by_vpid(pid);
+  switch(clr){
+    case 'c':
+      if (!target_task) {
+        return -ESRCH;                // No such process
+      }
+      else if(current->clr/4!=1){
+        return -EPERM;
+      }
+      else{
+        return (target_task->clr/4) == 1;
+      }
+    case 'm':
+      if (!target_task) {
+        return -ESRCH;                // No such process
+      }
+      else if(((current->clr%4)/2)!=1){
+        return -EPERM;
+      }
+      else{
+        return ((target_task->clr%4)/2) == 1;
+      }
+    case 's':
+      if (!target_task) {
+        return -ESRCH;                // No such process
+      }
+      else if((current->clr%2)!=1){
+        return -EPERM;
+      }
+      else{
+        return (target_task->clr%2)==1;
+      }
+    default:
+      return -EINVAL;                 //Invalid argument
+  } 
 }
 
 
 asmlinkage long sys_set_sec_branch(int height, char clr) {
-
-  if(height < 0 || (clr != 'm' && clr != 'c' && clr != 's') ){
+  struct task_struct *task = current;
+  if(height < 1){
     return -EINVAL;
   }
 
-  if(current->clr != clr){
-    return -EPERM;
-  }
-
-  struct task_struct *task;
   int i;
   int count_direct_parents_changed =0;
 
-  task = current;
+  switch(clr){
+    case 'c':
+      if(!(task->clr/4)){
+        return -EPERM;
+      }
 
-  // Traverse up the process tree
-  for (i = 0; i < height; i++) {
-    task = task->parent;
-    task->clr = clr;
-    count_direct_parents_changed++;
-    if(task == task->parent){  // We are at the init process so we can exit the traverse
-      return count_direct_parents_changed;
-    }
-  }
-  printk("SEC - Set branch with limit: %d, and clr: %c \n",height,clr);
-
+      // Traverse up the process tree
+      for (i = 0; i < height; i++) {
+        task = task->parent;
+        if((task->clr/4)!=1){
+          task->clr = task->clr + 4;
+          count_direct_parents_changed++;
+        }
+        if(task->pid == 1){  // We are at init (the root of the tree)
+          return count_direct_parents_changed;
+        }
+      }
+      
+    case 'm':
+      if(!((task->clr%4)/2)){
+        return -EPERM;
+      }
+      // Traverse up the process tree
+      for (i = 0; i < height; i++) {
+        task = task->parent;
+        if(((task->clr%4)/2)!=1){
+          task->clr = task->clr + 2;
+          count_direct_parents_changed++;
+        }
+        if(task->pid == 1){  // We are at init (the root of the tree)
+          return count_direct_parents_changed;
+        }
+      }
+    case 's':
+      if(!(task->clr%2)){
+        return -EPERM;
+      }
+      for (i = 0; i < height; i++) {
+        task = task->parent;
+        if((task->clr%2)!=1){
+          task->clr = task->clr + 1;
+          count_direct_parents_changed++;
+        }
+        if(task->pid == 1){  // We are at init (the root of the tree)
+          return count_direct_parents_changed;
+        }
+      }
+      
+    default:
+      return -EINVAL;
+  } 
   return count_direct_parents_changed;
 }
