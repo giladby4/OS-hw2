@@ -10,7 +10,7 @@ asmlinkage long sys_hello(void) {
 }
 
 asmlinkage long sys_set_sec(int s, int m, int c) {
-  if (current_euid() != 0) {
+  if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
     return -EPERM; // Return error if not root
   }
   if (s < 0 || m < 0 || c < 0) {
