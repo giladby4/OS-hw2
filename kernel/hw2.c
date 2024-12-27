@@ -87,10 +87,13 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
   task = current;
 
   // Traverse up the process tree
-  for (i = 0; i < height && task->parent != &init_task; i++) {
+  for (i = 0; i < height; i++) {
     task = task->parent;
     task->clr = clr;
     count_direct_parents_changed++;
+    if(task == task->parent){  // We are at the init process so we can exit the traverse
+      return count_direct_parents_changed;
+    }
   }
   printk("SEC - Set branch with limit: %d, and clr: %c \n",height,clr);
 
