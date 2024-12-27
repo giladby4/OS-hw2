@@ -2,6 +2,7 @@
 #include <linux/sched.h>
 #include <linux/ctype.h> // Added for isdigit()
 #include <linux/cred.h> // Added for current_euid()
+#include <linux/init_task.h> // Added for init_task
 
 
 asmlinkage long sys_hello(void) {
@@ -33,39 +34,54 @@ asmlinkage long sys_set_sec(int s, int m, int c) {
 }
 
 asmlinkage long sys_get_sec(char clr) {
- struct task_struct *task = current; // Pointer to the current process
- switch(clr){
-  case 'c':
-   return (task->clr/4)==1;
-  case 'm':
-   return ((task->clr%4)/2)==1;
-  case 's':
-   return (task->clr%2)==1;
- }
- printk("SEC get sec%c!\n",clr);
- return EINVAL;
+  struct task_struct *task = current; // Pointer to the current process
+  printk("SEC get sec%c!\n",clr);
+  switch(clr){
+    case 'c':
+      return (task->clr/4)==1;
+    case 'm':
+      return ((task->clr%4)/2)==1;
+    case 's':
+      return (task->clr%2)==1;
+    default:
+      return -EINVAL;
+  } 
 }
 
 asmlinkage long sys_check_sec(pid_t pid, char clr) {
- printk("SEC check sec%d%c!\n",pid,clr);
- return 0;
+
+  if(current->clr != clr){
+    return -EPERM;
+  }
+
+  struct task_struct *task;
+  task = find_task_by_vpid(pid);  // Find the task_struct for the given pid
+  if (!task) {
+    return -ESRCH;                // No such process
+  }
+
+  if(clr != 'm' && clr != 'c' && clr != 's'){
+    return -EINVAL;               // No such clearance
+  }
+
+  printk("SEC check sec%d%c!\n",pid,clr);
+  return task->clr == clr;
 }
 
 
 asmlinkage long sys_set_sec_branch(int height, char clr) {
+
   if(current->clr != clr){
     return -EPERM;
   }
-  if(height < 0){
-    return -EINVAL;
-  }
-  if (!isdigit(clr) || clr < '0' || clr > '7') {
+
+  if(height < 0 || (clr != 'm' && clr != 'c' && clr != 's') ){
     return -EINVAL;
   }
 
   struct task_struct *task;
   int i;
-  int count =0;
+  int count_direct_parents_changed =0;
 
   task = current;
 
@@ -73,9 +89,9 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
   for (i = 0; i < height && task->parent != &init_task; i++) {
     task = task->parent;
     task->clr = clr;
-    count++;
+    count_direct_parents_changed++;
   }
   printk("SEC set sec branch%d%c!\n",height,clr);
 
-  return count;
+  return count_direct_parents_changed;
 }
