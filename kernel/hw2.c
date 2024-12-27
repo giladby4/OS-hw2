@@ -1,5 +1,8 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
+#include <linux/ctype.h> // Added for isdigit()
+#include <linux/cred.h> // Added for current_euid()
+
 
 asmlinkage long sys_hello(void) {
  printk("Hello, World11!\n");
@@ -7,14 +10,21 @@ asmlinkage long sys_hello(void) {
 }
 
 asmlinkage long sys_set_sec(int s, int m, int c) {
- if(s<0||m<0||c<0)
-  return EINVAL;
- if(s>1)
-  s=1;
- if(m>1)
-  m=1;
- if(c>1)
-  c=1;
+  if (current_euid() != 0) {
+    return -EPERM; // Return error if not root
+  }
+  if (s < 0 || m < 0 || c < 0) {
+    return -EINVAL;
+  }
+  if (s > 1) {
+    s = 1;
+  }
+  if (m > 1) {
+    m = 1;
+  }
+  if (c > 1) {
+    c = 1;
+  }
  char clr_val=s+2*m+4*c;
  struct task_struct *task = current; // Pointer to the current process
  task->clr = clr_val; 
@@ -41,7 +51,31 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
  return 0;
 }
 
+
 asmlinkage long sys_set_sec_branch(int height, char clr) {
- printk("SEC set sec branch%d%c!\n",height,clr);
- return 0;
+  if(current->clr != clr){
+    return -EPERM;
+  }
+  if(height < 0){
+    return -EINVAL;
+  }
+  if (!isdigit(clr) || clr < '0' || clr > '7') {
+    return -EINVAL;
+  }
+
+  struct task_struct *task;
+  int i;
+  int count =0;
+
+  task = current;
+
+  // Traverse up the process tree
+  for (i = 0; i < height && task->parent != &init_task; i++) {
+    task = task->parent;
+    task->clr = clr;
+    count++;
+  }
+  printk("SEC set sec branch%d%c!\n",height,clr);
+
+  return count;
 }
