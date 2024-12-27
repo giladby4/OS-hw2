@@ -1,7 +1,6 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
 #include <linux/ctype.h> // Added for isdigit()
-#include <linux/cred.h> // Added for current_euid()
 #include <linux/init_task.h> // Added for init_task
 
 
@@ -11,12 +10,13 @@ asmlinkage long sys_hello(void) {
 }
 
 asmlinkage long sys_set_sec(int s, int m, int c) {
-  if (!uid_eq(current_euid(), GLOBAL_ROOT_UID)) {
-    return -EPERM; // Return error if not root
-  }
   if (s < 0 || m < 0 || c < 0) {
     return -EINVAL;
   }
+  if(!capable(CAP_SYS_ADMIN)){
+    return  -EPERM;
+  }
+
   if (s > 1) {
     s = 1;
   }
@@ -29,13 +29,13 @@ asmlinkage long sys_set_sec(int s, int m, int c) {
  char clr_val=s+2*m+4*c;
  struct task_struct *task = current; // Pointer to the current process
  task->clr = clr_val; 
- printk("SEC set sec %d%d%d%d!!\n",s,m,c,clr_val);
+ printk("SEC - Set clr for running process, s= %d, m= %d,c= %d, clr_val: %d!!\n",s,m,c,clr_val);
  return 0;
 }
 
 asmlinkage long sys_get_sec(char clr) {
   struct task_struct *task = current; // Pointer to the current process
-  printk("SEC get sec%c!\n",clr);
+  printk("SEC - Running process CLR is %c ?\n",task->clr);
   switch(clr){
     case 'c':
       return (task->clr/4)==1;
@@ -50,8 +50,8 @@ asmlinkage long sys_get_sec(char clr) {
 
 asmlinkage long sys_check_sec(pid_t pid, char clr) {
 
-  if(current->clr != clr){
-    return -EPERM;
+  if(clr != 'm' && clr != 'c' && clr != 's'){
+    return -EINVAL;               // No such clearance
   }
 
   struct task_struct *task;
@@ -60,23 +60,24 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
     return -ESRCH;                // No such process
   }
 
-  if(clr != 'm' && clr != 'c' && clr != 's'){
-    return -EINVAL;               // No such clearance
+  if(current->clr != clr){
+    return -EPERM;                // The calling process does not have “clr” clearance. 
+
   }
 
-  printk("SEC check sec%d%c!\n",pid,clr);
+  printk("SEC - Check if pid: %d have clr: %c!\n",pid,clr);
   return task->clr == clr;
 }
 
 
 asmlinkage long sys_set_sec_branch(int height, char clr) {
 
-  if(current->clr != clr){
-    return -EPERM;
-  }
-
   if(height < 0 || (clr != 'm' && clr != 'c' && clr != 's') ){
     return -EINVAL;
+  }
+
+  if(current->clr != clr){
+    return -EPERM;
   }
 
   struct task_struct *task;
@@ -91,7 +92,7 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
     task->clr = clr;
     count_direct_parents_changed++;
   }
-  printk("SEC set sec branch%d%c!\n",height,clr);
+  printk("SEC - Set branch with limit: %d, and clr: %c \n",height,clr);
 
   return count_direct_parents_changed;
 }
