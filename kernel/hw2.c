@@ -9,6 +9,21 @@ asmlinkage long sys_hello(void) {
  return 0;
 }
 
+/**
+ * sys_set_sec - System call to set security levels.
+ * @s: Security level for 's' (0 or 1).
+ * @m: Security level for 'm' (0 or 1).
+ * @c: Security level for 'c' (0 or 1).
+ *
+ * This function sets the security levels for the current process.
+ * The security levels are combined into a single value and stored
+ * in the 'clr' field of the current process structure to minimize task_struct size.
+ *
+ * Return: 
+ * -  0 on success,
+ * -  -EINVAL if any of the parameters are negative,
+ * -  -EPERM if the calling process does not have the CAP_SYS_ADMIN capability.
+ */
 asmlinkage long sys_set_sec(int s, int m, int c) {
   printk("SEC_set: before change clr: %d\n",(int)current->clr);
   if (s < 0 || m < 0 || c < 0) {
@@ -32,19 +47,21 @@ asmlinkage long sys_set_sec(int s, int m, int c) {
   return 0;
 }
 
-asmlinkage long sys_get_sec(char clr) {
-  switch(clr){
-    case 'c':
-      return (current->clr/4)==1;
-    case 'm':
-      return ((current->clr%4)/2)==1;
-    case 's':
-      return (current->clr%2)==1;
-    default:
-      return -EINVAL;
-  } 
-}
-
+/**
+ * sys_get_sec - System call to get security level based on input character.
+ * @clr: Character indicating the security level to check ('c', 'm', or 's').
+ *
+ * This system call checks the security level of the current process based on
+ * the input character:
+ * - 'c': Checks if the security level is "clamp".
+ * - 'm': Checks if the security level is "midnight".
+ * - 's': Checks if the security level is "sword".
+ *
+ * Return:
+ * - 1 if the security level matches the input character.
+ * - -EINVAL if the input character is invalid.
+ * - -EINVAL if the @clr parameter is invalid.
+ */
 asmlinkage long sys_check_sec(pid_t pid, char clr) {
   struct task_struct *target_task = find_task_by_vpid(pid);
   switch(clr){
@@ -84,6 +101,20 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
 }
 
 
+/**
+ * sys_set_sec_branch - Adjust the security clearance of a process's ancestors.
+ * @height: The number of levels to move up the process tree.
+ * @clr: The type of security clearance to adjust ('c' for clearance, 'm' for middle, 's' for secret).
+ *
+ * This system call moves up the process tree from the current process and adjusts the security
+ * clearance of the ancestors based on the specified type. The function will stop moving up if it 
+ * reaches the root of the process tree (init process with pid 1) or if the specified height is reached.
+ *
+ * Return: 
+ *   - The number of direct parent processes whose security clearance was adjusted.
+ *   - -EINVAL if the height is less than 1 or if an invalid clearance type is specified.
+ *   - -EPERM if the current process does not have the required security clearance to perform the operation.
+ */
 asmlinkage long sys_set_sec_branch(int height, char clr) {
   struct task_struct *task = current;
   if(height < 1){
@@ -110,7 +141,7 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
           return count_direct_parents_changed;
         }
       }
-      
+      return count_direct_parents_changed;
     case 'm':
       if(!((task->clr%4)/2)){
         return -EPERM;
@@ -126,6 +157,7 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
           return count_direct_parents_changed;
         }
       }
+      return count_direct_parents_changed;
     case 's':
       if(!(task->clr%2)){
         return -EPERM;
@@ -136,11 +168,11 @@ asmlinkage long sys_set_sec_branch(int height, char clr) {
           task->clr = task->clr + 1;
           count_direct_parents_changed++;
         }
-        if(task->pid == 1){  // We are at init (the root of the tree)
+        if(task->pid == 1){  // We are at init (the root of the tree) return.
           return count_direct_parents_changed;
         }
       }
-      
+      return count_direct_parents_changed;
     default:
       return -EINVAL;
   } 
