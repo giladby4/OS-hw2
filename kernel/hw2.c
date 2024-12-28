@@ -1,9 +1,16 @@
 #include <linux/kernel.h>
 #include <linux/sched.h>
-#include <linux/ctype.h> // Added for isdigit()
-#include <linux/init_task.h> // Added for init_task
+#include <linux/capability.h>   //In use by: capable(CAP_SYS_ADMIN)
 
-
+/**
+ * sys_hello - A simple syscall that prints "Hello, World!" to the kernel log.
+ *
+ * This function is an example of a custom system call that outputs a message
+ * to the kernel log using the printk function. It does not take any arguments
+ * and always returns 0.
+ *
+ * Return: Always returns 0.
+ */
 asmlinkage long sys_hello(void) {
  printk("Hello, World!\n");
  return 0;
@@ -48,26 +55,56 @@ asmlinkage long sys_set_sec(int s, int m, int c) {
 }
 
 /**
- * sys_get_sec - System call to get security level based on input character.
+ * sys_get_sec - System call check current task security level based on input character.
  * @clr: Character indicating the security level to check ('c', 'm', or 's').
  *
- * This system call checks the security level of the current process based on
+ * This system call checks the security level of the current task based on
  * the input character:
  * - 'c': Checks if the security level is "clamp".
  * - 'm': Checks if the security level is "midnight".
  * - 's': Checks if the security level is "sword".
  *
  * Return:
- * - 1 if the security level matches the input character.
- * - -EINVAL if the input character is invalid.
+ * - 1 if the security level of current task matches the input character.
  * - -EINVAL if the @clr parameter is invalid.
+ */
+asmlinkage long sys_get_sec(char clr) {
+  switch(clr){
+    case 'c':
+      return (current->clr/4)==1;
+    case 'm':
+      return ((current->clr%4)/2)==1;
+    case 's':
+      return (current->clr%2)==1;
+    default:
+      return -EINVAL;
+  } 
+}
+
+
+
+/**
+ * sys_check_sec - Check security clearance of target process.
+ * @pid: Process ID of the target process.
+ * @clr: Security clearance level to check ('c', 'm', or 's').
+ *
+ * This system call checks the security clearance of a target process
+ * specified by its PID. The security clearance levels are represented
+ * by the characters 'c', 'm', and 's', which correspond to different
+ * levels of clearance.
+ *
+ * Return:
+ * -  1 if the target process has the specified security clearance.
+ * -  -ESRCH if the target process does not exist.
+ * -  -EPERM if the current process does not have the required clearance to check.
+ * -  -EINVAL if an invalid clearance level is provided.
  */
 asmlinkage long sys_check_sec(pid_t pid, char clr) {
   struct task_struct *target_task = find_task_by_vpid(pid);
   switch(clr){
     case 'c':
       if (!target_task) {
-        return -ESRCH;                // No such process
+        return -ESRCH;                
       }
       else if(current->clr/4!=1){
         return -EPERM;
@@ -77,7 +114,7 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
       }
     case 'm':
       if (!target_task) {
-        return -ESRCH;                // No such process
+        return -ESRCH;                
       }
       else if(((current->clr%4)/2)!=1){
         return -EPERM;
@@ -87,7 +124,7 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
       }
     case 's':
       if (!target_task) {
-        return -ESRCH;                // No such process
+        return -ESRCH;                
       }
       else if((current->clr%2)!=1){
         return -EPERM;
@@ -96,7 +133,7 @@ asmlinkage long sys_check_sec(pid_t pid, char clr) {
         return (target_task->clr%2)==1;
       }
     default:
-      return -EINVAL;                 //Invalid argument
+      return -EINVAL;                 
   } 
 }
 
